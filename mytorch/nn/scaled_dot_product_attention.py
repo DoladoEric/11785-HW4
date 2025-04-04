@@ -12,7 +12,7 @@ class ScaledDotProductAttention:
         # Initialize your softmax layer
         # What dimension should you pass to the softmax constructor?
         self.eps = 1e-4 # DO NOT MODIFY
-        self.softmax = NotImplementedError
+        self.softmax = Softmax(dim=-1) # TODO - What dimension should you pass to the softmax constructor?
         
     
     def forward(self, Q, K, V, mask=None):
@@ -27,22 +27,24 @@ class ScaledDotProductAttention:
         
         # Calculate attention scores: (N, ..., H, L, S)
         # (N, ..., H, L, E) @ (N, ..., H, E, S) -> (N, ..., H, L, S)
-        scaled_dot_product = NotImplementedError
+        attention_scores = np.matmul(Q, K.transpose(-2, -1)) # TODO - What is the shape of the result?
+        d_k = K.shape[-1] # TODO - What is the shape of the result?
+        scaled_dot_product = attention_scores / np.sqrt(d_k) # TODO - What is the shape of the result?
         
         # Apply mask before softmax if provided
         # If mask is not None, add -self.eps to the attention scores for positions to ignore
         if mask is not None:
-            scaled_dot_product = NotImplementedError
+            scaled_dot_product = np.where(mask, scaled_dot_product, scaled_dot_product - self.eps)
 
         # Compute attention scores: Apply softmax along S dimension (N, ..., H, L, S)
-        self.attention_scores = NotImplementedError
+        self.attention_scores = Softmax.forward(scaled_dot_product) # TODO - What is the shape of the result?
 
         # Calculate output: (N, ..., H, L, Ev)
         # (N, ..., H, L, S) @ (N, ..., H, S, Ev) -> (N, ..., H, L, Ev) 
-        output = NotImplementedError
+        output = np.matmul(self.attention_scores, V)
 
         # Return output
-        raise NotImplementedError
+        return output
     
     def backward(self, d_output):
         """
@@ -54,22 +56,22 @@ class ScaledDotProductAttention:
         # Calculate gradients for V: (N, ..., H, S, Ev)
         # (N, ..., H, L, S) @ (N, ..., H, S, Ev) -> (N, ..., H, L, Ev) 
         # Use the transpose of stored softmax output to swap last two dimensions   
-        d_V = NotImplementedError
+        d_V = np.matmul(self.attention_scores.transpose(-2, -1), d_output)
         
         # Calculate gradients for attention scores
         # (N, ..., H, L, Ev) @ (N, ..., H, Ev, S) -> (N, ..., H, L, S)
-        d_attention_scores = NotImplementedError
-        d_scaled_dot_product = NotImplementedError
+        d_attention_scores = np.matmul(d_output, V.transpose(-2, -1))
+        d_scaled_dot_product = d_attention_scores / np.sqrt(K.shape[-1])
         
         # Scale gradients by sqrt(d_k)
-        d_scaled_dot_product = NotImplementedError
+        d_scaled_dot_product = d_attention_scores / np.sqrt(K.shape[-1])
         
         # Calculate gradients for Q and K
         # (N, ..., H, L, S) @ (N, ..., H, S, E) -> (N, ..., H, L, E)   
-        d_Q = NotImplementedError
+        d_Q = np.matmul(d_scaled_dot_product, K)
         # (N, ..., H, L, S) @ (N, ..., H, L, E) -> (N, ..., H, S, E)
-        d_K = NotImplementedError
+        d_K = np.matmul(d_scaled_dot_product.transpose(-2, -1), Q)
         
         # Return gradients for Q, K, V
-        raise NotImplementedError
+        return d_Q, d_K, d_V
 

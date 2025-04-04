@@ -86,7 +86,8 @@ class MultiHeadAttention:
         attn_scores = attn_scores / np.sqrt(np.tensor(d_k, dtype=np.float))  # scaled
         attn_scores = attn_scores.masked_fill(mask == 1, float('-inf'))  # applied mask
         attn_weights = Softmax(attn_scores, dim=-1)  # (N, H, L, S)
-        attn_output = np.matmul(attn_weights, v)
+        #attn_output = np.matmul(attn_weights, v)
+        attn_output = np.matmul(attn_weights, v)  # (N, H, L, embed_dim // num_heads)
 
         # Merge the attention outputs   
         # (N, num_heads, L, embed_dim // num_heads) -> (N, L, embed_dim)
@@ -95,6 +96,7 @@ class MultiHeadAttention:
         # Project the attention outputs
         # (N, L, embed_dim) -> (N, L, embed_dim)
         output = self.out_proj(attn_output)
+        print("this is the test")
 
         # Return output
         return output
@@ -109,34 +111,35 @@ class MultiHeadAttention:
 
         # Backpropagate through the output projection   
         # (N, L, embed_dim) -> (N, L, embed_dim) 
-        d_attn_output = NotImplementedError
+        #d_attn_output = NotImplementedError
+        d_attn_output = self.out_proj.backward(d_output)
 
         # Split the gradients into multiple heads
         # (N, L, embed_dim) -> (N, num_heads, L, embed_dim // num_heads)
-        d_attn_outputs = NotImplementedError
+        d_attn_outputs =  d_attn_output.view(self.N, self.L, self.num_heads, self.E // self.num_heads).transpose(1, 2)
 
         # Backpropagate through the attention mechanism
         # (N, num_heads, L, embed_dim // num_heads) -> (N, num_heads, L, embed_dim // num_heads)
-        d_q, d_k, d_v = NotImplementedError
+        d_q, d_k, d_v = self.attention.backward(d_attn_outputs)
 
         # Merge the gradients
         # (N, num_heads, L, embed_dim // num_heads) -> (N, L, embed_dim)    
-        d_q = NotImplementedError
+        d_q = self._concat_heads(d_q)
         # (N, num_heads, S, embed_dim // num_heads) -> (N, S, embed_dim)
-        d_k = NotImplementedError
+        d_k = self._concat_heads(d_k)
         # (N, num_heads, S, embed_dim // num_heads) -> (N, S, embed_dim)
-        d_v = NotImplementedError
+        d_v = self._concat_heads(d_v)
 
         # Backpropagate through the input projections   
         # (N, L, embed_dim) -> (N, L, embed_dim)
-        d_q = NotImplementedError
+        d_q = self.q_proj.backward(d_q)
         # (N, S, embed_dim) -> (N, S, embed_dim)
-        d_k = NotImplementedError
+        d_k =  self.k_proj.backward(d_k)
         # (N, S, embed_dim) -> (N, S, embed_dim)
-        d_v = NotImplementedError
+        d_v = self.v_proj.backward(d_v)
 
         # Return gradients d_q, d_k, d_v
-        raise NotImplementedError
+        return d_q, d_k, d_v
 
     def _merge_masks(self, key_padding_mask, attn_mask):
         """
@@ -148,16 +151,18 @@ class MultiHeadAttention:
         # TODO: Implement merge masks
 
         # Expand key_padding_mask to (N, 1, 1, S) and broadcast to (N, H, L, S)
-        key_mask = NotImplementedError
+        key_mask = key_padding_mask.unsqueeze(1).unsqueeze(2)
+        key_mask = key_mask.expand(self.N, self.num_heads, self.L, self.S)
         
         # Expand attn_mask to (1, 1, L, S) and broadcast to (N, H, L, S)
-        attention_mask = NotImplementedError
+        attention_mask = attn_mask.unsqueeze(0).unsqueeze(0)
+        attention_mask = attention_mask.expand(self.N, self.num_heads, self.L, self.S)
         
         # Combine masks using logical_or - if either mask is True, we want to mask that position
-        combined_mask = NotImplementedError
+        combined_mask = key_mask | attention_mask
         
         # Return combined mask
-        raise NotImplementedError
+        return combined_mask
 
     def _split_heads(self, x):
         """
@@ -169,13 +174,13 @@ class MultiHeadAttention:
         # TODO: Implement split heads
 
         # Reshape: (N, L, embed_dim) -> (N, L, num_heads, embed_dim // num_heads)
-        x = NotImplementedError
+        x = x.view(self.N, self.L, self.num_heads, self.E // self.num_heads)
         
         # Transpose: (N, L, num_heads, embed_dim // num_heads) -> (N, num_heads, L, embed_dim // num_heads)
-        x = NotImplementedError
+        x = x.transpose(1, 2)
         
         # Return x
-        raise NotImplementedError
+        return x
 
     def _concat_heads(self, x):
         """
@@ -186,10 +191,10 @@ class MultiHeadAttention:
         """
         # TODO: Implement concat heads
         # Transpose: (N, num_heads, L, embed_dim // num_heads) -> (N, L, num_heads, embed_dim // num_heads)
-        x = NotImplementedError
+        x = x.transpose(1, 2)
         
         # Reshape: (N, L, num_heads, embed_dim // num_heads) -> (N, L, embed_dim)
-        x = NotImplementedError
+        x = x.contiguous().view(self.N, self.L, self.E)
         
         # Return x
-        raise NotImplementedError
+        return x

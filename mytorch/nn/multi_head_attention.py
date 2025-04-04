@@ -1,4 +1,5 @@
 from .linear import Linear
+from .activation import Softmax
 from .scaled_dot_product_attention import ScaledDotProductAttention
 import numpy as np
 
@@ -20,14 +21,14 @@ class MultiHeadAttention:
         self.num_heads = num_heads
         
         # Initialize your scaled dot product attention layer
-        self.attention = NotImplementedError
+        self.attention = ScaledDotProductAttention()
         
         # Initialize your linear layer
         #  embed_dim -> embed_dim
-        self.q_proj   = NotImplementedError
-        self.k_proj   = NotImplementedError
-        self.v_proj   = NotImplementedError
-        self.out_proj = NotImplementedError
+        self.q_proj   = Linear(embed_dim, embed_dim)
+        self.k_proj   = Linear(embed_dim, embed_dim)
+        self.v_proj   = Linear(embed_dim, embed_dim)
+        self.out_proj = Linear(embed_dim, embed_dim)
 
     def init_weights(self, Wq, bq, Wk, bk, Wv, bv, Wo, bo):
         """
@@ -58,38 +59,45 @@ class MultiHeadAttention:
         
         # Project the query, key, and value inputs into query, key, and value
         # (N, L, E) -> (N, L, embed_dim)
-        q = NotImplementedError
+        q = self.q_proj(query)
         # (N, S, E) -> (N, S, embed_dim)
-        k = NotImplementedError
+        k = self.k_proj(key)
         # (N, S, E) -> (N, S, embed_dim)
-        v = NotImplementedError
+        v = self.v_proj(value)
 
         # Split the query, key, and value into multiple heads
         # (N, L, embed_dim) -> (N, num_heads, L, embed_dim // num_heads)
-        q = NotImplementedError
+        q = q.view(self.N, self.t, self.num_heads, self.E // self.num_heads).transpose(1,2)
         # (N, S, embed_dim) -> (N, num_heads, S, embed_dim // num_heads)
-        k = NotImplementedError
+        k = k.view(self.N, self.S, self.num_heads,self.E // self.num_heads).transpose(1,2)
         # (N, S, embed_dim) -> (N, num_heads, S, embed_dim // num_heads)
-        v = NotImplementedError
+        v = v.view(self.N, self.S, self.num_heads,self.E // self.num_heads).transpose(1,2)
 
         # Merge the masks
         # (N, S) + (L, S) -> (N, H, L, S)
-        mask = NotImplementedError
+        key_padding_mask =key_padding_mask.unsqueeze(1).unsqueeze(2)
+        attn_mask = attn_mask.unsqueeze(0).unsqueeze(1)
+        mask = key_padding_mask | attn_mask
 
         # Apply the attention mechanism
         # (N, num_heads, L, embed_dim // num_heads)
-        attn_outputs = NotImplementedError
+        attn_outputs = np.matmul(q,k.transpose(-2,-1))
+        d_k = q.size(-1)
+        attn_scores = attn_scores / np.sqrt(np.tensor(d_k, dtype=np.float))  # scaled
+        attn_scores = attn_scores.masked_fill(mask == 1, float('-inf'))  # applied mask
+        attn_weights = Softmax(attn_scores, dim=-1)  # (N, H, L, S)
+        attn_output = np.matmul(attn_weights, v)
 
         # Merge the attention outputs   
         # (N, num_heads, L, embed_dim // num_heads) -> (N, L, embed_dim)
-        attn_output = NotImplementedError
+        attn_output = attn_output.transpose(1, 2).contiguous().view(self.N, self.L, self.E) 
 
         # Project the attention outputs
         # (N, L, embed_dim) -> (N, L, embed_dim)
-        output = NotImplementedError
+        output = self.out_proj(attn_output)
 
         # Return output
-        raise NotImplementedError
+        return output
 
     def backward(self, d_output):
         """

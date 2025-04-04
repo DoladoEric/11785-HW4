@@ -1,51 +1,43 @@
 import numpy as np
 
+
 class Linear:
-    def __init__(self, in_features, out_features):
+    def __init__(self, in_features, out_features, debug=False):
         """
-        Initialize the weights and biases with zeros
-        W shape: (out_features, in_features)
-        b shape: (out_features,)  # Changed from (out_features, 1) to match PyTorch
+        Initialize the weights and biases with zeros (Hint: check np.zeros method)
+        Read the writeup (Hint: Linear Layer Section Table) to identify the right shapes for `W` and `b`.
         """
-        # DO NOT MODIFY
-        self.W = np.zeros((out_features, in_features))
-        self.b = np.zeros(out_features)
-
-
-    def init_weights(self, W, b):
-        """
-        Initialize the weights and biases with the given values.
-        """
-        # DO NOT MODIFY
-        self.W = W
-        self.b = b
+        self.debug = debug
+        self.W = np.random.randn(out_features, in_features)  # TODO
+        self.b = np.random.randn(out_features,1)  # TODO
 
     def forward(self, A):
         """
-        :param A: Input to the linear layer with shape (*, in_features)
-        :return: Output Z with shape (*, out_features)
-        
-        Handles arbitrary batch dimensions like PyTorch
-        """
-        # TODO: Implement forward pass
-        
-        # Store input for backward pass
-        self.A = A
-        
-        raise NotImplementedError
+        :param A: Input to the linear layer with shape (N, C0)
+        :return: Output of linear layer with shape (N, C1)
 
+        Read the writeup (Hint: Linear Layer Section) for implementation details for `Z`
+        """
+        self.A = A  # TODO
+        self.N = A.shape[0]  # - store the batch size parameter of the input A
+
+        # Think how can `self.ones` help in the calculations and uncomment below code snippet.
+        self.ones = np.ones((self.N, 1))
+
+        Z = np.dot(A, self.W.T) + np.dot(self.ones, self.b.T)  # TODO
+        return Z  
     def backward(self, dLdZ):
         """
-        :param dLdZ: Gradient of loss wrt output Z (*, out_features)
-        :return: Gradient of loss wrt input A (*, in_features)
-        """
-        # TODO: Implement backward pass
+        :param dLdZ: Gradient of loss wrt output Z (N, C1)
+        :return: Gradient of loss wrt input A (N, C0)
 
-        # Compute gradients (refer to the equations in the writeup)
-        self.dLdA = NotImplementedError
-        self.dLdW = NotImplementedError
-        self.dLdb = NotImplementedError
-        self.dLdA = NotImplementedError
-        
-        # Return gradient of loss wrt input
-        raise NotImplementedError
+        Read the writeup (Hint: Linear Layer Section) for implementation details below variables.
+        """
+        dLdA = np.dot(dLdZ,self.W)  # TODO
+        self.dLdW = np.dot(dLdZ.T , self.A)  # TODO
+        self.dLdb = np.dot(dLdZ.T,self.ones)  # TODO
+
+        if self.debug:
+            self.dLdA = dLdA
+
+        return dLdA  # TODO - What should be the return value?

@@ -163,10 +163,41 @@ class SequenceGenerator:
             raise ValueError("Input x must be 2-dimensional (batch_size, seq_len)")
         if self.max_length < x.size(1):
             raise ValueError("max_length must be >= input sequence length")
-        
+        batch_size, seq_len = x.size()
+        device = x.device
         # TODO: Implement greedy search
-        raise NotImplementedError # Remove once implemented
+        #raise NotImplementedError # Remove once implemented
 
+        sequences = x.clone()
+        scores = torch.zeros(batch_size, device=device)
+
+        finished = torch.zeros(batch_size, dtype=torch.bool, device=device)
+
+        for _ in range(self.max_length - seq_len):
+            logits = self.model(sequences)
+            logits = logits[:, -1, :]  # Get the last token logits
+
+            # Apply temperature and repeat penalty
+            if temperature != 1.0 or repeat_penalty != 1.0:
+                logits = self._apply_repeat_penalty(logits, sequences, repeat_penalty)
+                logits = self._filter_logits(logits, temperature=temperature)
+
+            probs = torch.softmax(logits, dim=-1)
+            next_tokens = torch.argmax(probs, dim=-1)  # Get the most probable token
+
+            sequences = torch.cat([sequences, next_tokens.unsqueeze(1)], dim=1)  # Append the token to the sequence
+            scores += torch.log(probs[torch.arange(batch_size), next_tokens])  # Update scores
+
+            if hasattr(self.tokenizer, 'eos_id'):
+                eos_mask = (next_tokens == self.tokenizer.eos_id)
+                finished = finished | eos_mask
+                if finished.all():
+                    break
+            if sequences.size(1) < self.max_length:
+                pad_length = self.max_length - sequences.size(1)
+                padding = torch.full((batch_size, pad_length), self.tokenizer.pad_id, device=device)
+                sequences = torch.cat([sequences, padding], dim=1)
+            return sequences, scores    
     def generate_beam(
             self,
             x: torch.Tensor,

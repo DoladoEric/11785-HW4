@@ -53,9 +53,17 @@ class SelfAttentionDecoderLayer(nn.Module):
         # TODO: Implement __init__
        
         # TODO: Initialize the sublayers      
-        self.self_attn = NotImplementedError # Masked self-attention layer
-        self.ffn = NotImplementedError # Feed-forward network
-        raise NotImplementedError # Remove once implemented
+        self.self_attn =  nn.MultiheadAttention(embed_dim=d_model,num_heads=num_heads,dropout=dropout,batch_first=True)# Masked self-attention layer
+        self.ffn = nn.Sequential(
+            nn.Linear(d_model, d_ff), # Linear layer
+            nn.ReLU(),               # Activation function
+            nn.Dropout(dropout)      # Dropout layer
+            nn.Linear(d_ff, d_model),# Linear layer
+            
+        ) # Feed-forward network
+        self.norm1 = nn.LayerNorm(d_model)
+        self.norm2 = nn.LayerNorm(d_model)
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, x: torch.Tensor, key_padding_mask: Optional[torch.Tensor] = None, attn_mask: Optional[torch.Tensor] = None) -> Tuple[torch.Tensor, torch.Tensor]:
         '''
@@ -71,10 +79,10 @@ class SelfAttentionDecoderLayer(nn.Module):
         '''
         # TODO: Implement forward: Follow the figure in the writeup
 
-        x, mha_attn_weights = NotImplementedError, NotImplementedError
+        x, mha_attn_weights = self.self_attn(x, x, x, key_padding_mask=key_padding_mask, attn_mask=attn_mask)
         
         # TODO: Return the output tensor and attention weights
-        raise NotImplementedError # Remove once implemented
+        return x, mha_attn_weights
 
 ## -------------------------------------------------------------------------------------------------    
 class CrossAttentionDecoderLayer(nn.Module):
@@ -95,10 +103,20 @@ class CrossAttentionDecoderLayer(nn.Module):
         # TODO: Implement __init__
 
         # TODO: Initialize the sublayers  
-        self.self_attn  = NotImplementedError # Masked self-attention layer
-        self.cross_attn = NotImplementedError # Cross-attention layer
-        self.ffn        = NotImplementedError # Feed-forward network
-        raise NotImplementedError # Remove once implemented
+        self.self_attn  = nn.MultiheadAttention() # Masked self-attention layer
+        self.cross_attn = nn.MultiheadAttention(embed_dim=d_model,num_heads=num_heads,dropout=dropout,batch_first=True)
+         # Cross-attention layer
+        self.ffn        = nn.Sequential(
+            nn.Linear(d_model, d_ff), # Linear layer
+            nn.ReLU(),               # Activation function
+            nn.Dropout(dropout),      # Dropout layer
+            nn.Linear(d_ff, d_model), # Linear layer
+        ) # Feed-forward network
+        self.norm1 = nn.LayerNorm(d_model)
+        self.norm2 = nn.LayerNorm(d_model)
+        self.norm3 = nn.LayerNorm(d_model)
+        
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, x: torch.Tensor, enc_output: torch.Tensor, dec_key_padding_mask: Optional[torch.Tensor] = None, enc_key_padding_mask: Optional[torch.Tensor] = None, attn_mask: Optional[torch.Tensor] = None) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         '''
@@ -115,10 +133,21 @@ class CrossAttentionDecoderLayer(nn.Module):
             cross_attn_weights (torch.Tensor): The attention weights. shape: (batch_size, seq_len, seq_len)    
         '''
         # TODO: Implement forward: Follow the figure in the writeup
+        residual = x
+        x = self.norm1(x)
+        x,self_attn_weights = self.self_attn(x, x, x, key_padding_mask=dec_key_padding_mask, attn_mask=attn_mask)
+        x = self.dropout(x) + residual
 
-        x, self_attn_weights  = NotImplementedError, NotImplementedError
-        x, cross_attn_weights = NotImplementedError, NotImplementedError
+        residual = x
+        x = self.norm2(x)
+        x, cross_attn_weights = self.cross_attn(x, enc_output, enc_output, key_padding_mask=enc_key_padding_mask)
+        x = self.dropout(x) + residual
+
+        residual = x
+        x = self.norm3(x)
+        x = self.ffn(x)
+        x = self.dropout(x) + residual
 
         # TODO: Return the output tensor and attention weights    
-        raise NotImplementedError # Remove once implemented
+        return x, self_attn_weights, cross_attn_weights
 ## -------------------------------------------------------------------------------------------------    

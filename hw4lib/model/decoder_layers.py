@@ -57,8 +57,8 @@ class SelfAttentionDecoderLayer(nn.Module):
         self.ffn = nn.Sequential(
             nn.Linear(d_model, d_ff), # Linear layer
             nn.ReLU(),               # Activation function
-            nn.Dropout(dropout)      # Dropout layer
-            nn.Linear(d_ff, d_model),# Linear layer
+            nn.Dropout(dropout),     # Dropout layer
+            nn.Linear(d_ff, d_model)# Linear layer
             
         ) # Feed-forward network
         self.norm1 = nn.LayerNorm(d_model)
@@ -78,9 +78,16 @@ class SelfAttentionDecoderLayer(nn.Module):
             mha_attn_weights (torch.Tensor): The attention weights. shape: (batch_size, seq_len, seq_len)   
         '''
         # TODO: Implement forward: Follow the figure in the writeup
-
+        residual = x
+        x = self.norm1(x)
         x, mha_attn_weights = self.self_attn(x, x, x, key_padding_mask=key_padding_mask, attn_mask=attn_mask)
-        
+        x = self.dropout(x) + residual
+
+        residual = x
+        x = self.norm2(x)
+        x = self.ffn(x)
+        x = self.dropout(x) 
+
         # TODO: Return the output tensor and attention weights
         return x, mha_attn_weights
 
@@ -103,7 +110,7 @@ class CrossAttentionDecoderLayer(nn.Module):
         # TODO: Implement __init__
 
         # TODO: Initialize the sublayers  
-        self.self_attn  = nn.MultiheadAttention() # Masked self-attention layer
+        self.self_attn  = nn.MultiheadAttention(embed_dim=d_model,num_heads=num_heads,dropout=dropout,batch_first=True) # Masked self-attention layer
         self.cross_attn = nn.MultiheadAttention(embed_dim=d_model,num_heads=num_heads,dropout=dropout,batch_first=True)
          # Cross-attention layer
         self.ffn        = nn.Sequential(

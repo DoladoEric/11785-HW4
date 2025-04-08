@@ -58,9 +58,9 @@ class LMDataset(Dataset):
 
         # TODO: Get tokenizer ids for special tokens (eos, sos, pad)
         # Hint: See the class members of the H4Tokenizer class
-        self.eos_token = "[EOS]"
-        self.sos_token = "[SOS]"
-        self.pad_token = "[PAD]"
+        self.pad_token = tokenizer.tokenizer.token_to_id("[PAD]")  # get the [PAD] token id
+        self.sos_token = tokenizer.tokenizer.token_to_id("[SOS]")  
+        self.eos_token = tokenizer.tokenizer.token_to_id("[EOS]")   
 
         # Set up data paths 
         # TODO: Join root and partition to get the text directory
@@ -70,7 +70,8 @@ class LMDataset(Dataset):
         self.text_files = sorted(os.listdir(self.text_dir))
 
         # TODO: Take subset
-        subset_size = self.config['subset_size']
+        #subset_size = self.config['subset']
+        subset_size = int(self.config['subset'])
         self.text_files = self.text_files[:subset_size] if subset_size > 0 else self.text_files
 
         # Initialize lists to store transcripts
@@ -105,8 +106,8 @@ class LMDataset(Dataset):
             self.text_max_len = max(self.text_max_len, len(tokenized)+1)
             
             # TODO: Create shifted and golden versions by adding sos and eos tokens
-            self.transcripts_shifted.append([1] + tokenized) # SOS token
-            self.transcripts_golden.append(tokenized + [1]) # EOS token
+            self.transcripts_shifted.append([self.sos_token] + tokenized) # SOS token
+            self.transcripts_golden.append(tokenized + [self.eos_token]) # EOS token
 
         # Calculate average characters per token
         # DO NOT MODIFY
@@ -148,6 +149,8 @@ class LMDataset(Dataset):
         # Make sure you convert to the right type
         shifted = torch.LongTensor(self.transcripts_shifted[idx])
         golden  = torch.LongTensor(self.transcripts_golden[idx])
+        print("Shifted:", self.transcripts_shifted[-1])
+        print("Golden:", self.transcripts_golden[-1])
         return shifted, golden # Return the shifted and golden transcripts
     
     
@@ -169,18 +172,18 @@ class LMDataset(Dataset):
         shifted_transcripts, golden_transcripts = zip(*batch)
         
         # TODO: Record the sequence lengths before padding
-        lengths =  [len(sequence) for sequence in batch]# (B)
-
+        lengths =  [len(sequence) for sequence in shifted_transcripts]# (B)
+        print(self.pad_token)
         # TODO: Pad sequences (use torch.nn.utils.rnn.pad_sequence and pad with pad_token)
         padded_shifted = torch.nn.utils.rnn.pad_sequence(
             [torch.LongTensor(seq) for seq in shifted_transcripts],
             batch_first=True,
-            padding_value=self.tokenizer.encode(self.pad_token)[0]
+            padding_value=self.pad_token
         ) # (B, T)
         padded_golden  =  torch.nn.utils.rnn.pad_sequence(
             [torch.LongTensor(seq) for seq in golden_transcripts],
             batch_first=True,
-            padding_value=self.tokenizer.encode(self.pad_token)[0]
+            padding_value=self.pad_token
         )
 
         # TODO: Return the padded shifted, padded golden, and lengths

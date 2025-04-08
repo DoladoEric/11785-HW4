@@ -66,14 +66,17 @@ class SelfAttentionLayer(nn.Module):
             mha_attn_weights (torch.Tensor): The attention weights. shape: (batch_size, seq_len, seq_len)   
         '''
         # TODO: Implement forward: Follow the figure in the writeup
-        
+        residual = x
+
+        #pre-norm
+        x = self.norm(x)
         # TODO: Self-attention
         # Be sure to use the correct arguments for the multi-head attention layer
         # Set need_weights to True and average_attn_weights to True so we can get the attention weights 
         x, mha_attn_weights = self.mha(x, x, x, key_padding_mask=key_padding_mask, attn_mask=attn_mask, need_weights=True, average_attn_weights=True)
         
         # NOTE: For some regularization you can apply dropout and then add residual connection
-        
+        x = self.dropout(x) + residual
         # TODO: Return the output tensor and attention weights
         return x, mha_attn_weights
     

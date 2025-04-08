@@ -193,11 +193,11 @@ class SequenceGenerator:
                 finished = finished | eos_mask
                 if finished.all():
                     break
-            if sequences.size(1) < self.max_length:
-                pad_length = self.max_length - sequences.size(1)
-                padding = torch.full((batch_size, pad_length), self.tokenizer.pad_id, device=device)
-                sequences = torch.cat([sequences, padding], dim=1)
-            return sequences, scores    
+        if sequences.size(1) < self.max_length:
+            pad_length = self.max_length - sequences.size(1)
+            padding = torch.full((batch_size, pad_length), self.tokenizer.pad_id, device=device)
+            sequences = torch.cat([sequences, padding], dim=1)
+        return sequences, scores    
     def generate_beam(
             self,
             x: torch.Tensor,
@@ -227,9 +227,65 @@ class SequenceGenerator:
         if self.max_length < x.size(1):
             raise ValueError("max_length must be >= input sequence length")
         
-        # TODO: Implement beam search
-        raise NotImplementedError # Remove once implemented
+        batch_size, seq_len = x.size()
+        device = x.device
 
+        # Initialize beams
+        beam_sequences = x.unsqueeze(1).repeat(1, beam_width, 1)  # (batch_size, beam_width, seq_len)
+        beam_scores = torch.zeros(batch_size, beam_width, device=device)  # (batch_size, beam_width)
+
+        finished = torch.zeros(batch_size, beam_width, dtype=torch.bool, device=device)  # (batch_size, beam_width)
+
+        for _ in range(self.max_length - seq_len):
+            flat_sequences = beam_sequences.view(batch_size * beam_width, -1)
+              # (batch_size * beam_width, seq_len)
+            logits = self.model(flat_sequences)
+            logits = logits[:, -1, :]  # Get the last token logits
+
+            if temperature != 1.0 or repeat_penalty != 1.0:
+                logits = self._apply_repeat_penalty(logits, flat_sequences, repeat_penalty)
+                logits = self._filter_logits(logits, temperature=temperature)
+
+            probs = torch.softmax(logits, dim=-1)  # (batch_size * beam_width, vocab_size)
+            probs = probs.view(batch_size, beam_width, -1)  # (batch_size, beam_width, vocab_size)
+            expanded_scores = beam_scores.unsqueeze(-1) + probs  # (batch_size, beam_width, vocab_size)
+
+            # Flatten to (batch_size, beam_width * vocab_size)
+            flat_scores = expanded_scores.view(batch_size, -1)  # (batch_size, beam_width * vocab_size)
+            # Get top-k scores and indices
+            top_k_scores, top_k_indices = torch.topk(flat_scores, beam_width, dim=-1)  # (batch_size, beam_width)
+
+            # Compute new beam sequences and scores
+            new_beam_sequences = torch.zeros_like(beam_sequences)
+            new_beam_scores = torch.zeros_like(beam_scores)
+            for batch_idx in range(batch_size):
+                for beam_idx in range(beam_width):
+                    # Get the beam and token indices
+                    flat_index = top_indices[batch_idx, beam_idx]
+                    beam_id = flat_index // probs.size(-1)
+                    token_id = flat_index % probs.size(-1)
+
+                    # Update sequence and score
+                    new_beam_sequences[batch_idx, beam_idx, :] = beam_sequences[batch_idx, beam_id, :]
+                    new_beam_sequences[batch_idx, beam_idx, -1] = token_id
+                    new_beam_scores[batch_idx, beam_idx] = top_scores[batch_idx, beam_idx]
+
+                    # Check for end-of-sequence (EOS) tokens
+                    if hasattr(self, "eos_token_id") and token_id == self.eos_token_id:
+                        finished[batch_idx, beam_idx] = True
+
+            # Update beams
+            beam_sequences = new_beam_sequences
+            beam_scores = new_beam_scores
+
+            if finished.all():
+                break
+            sorted_scores, sorted_indices = torch.sort(beam_scores, descending=True, dim=-1)
+            sorted_sequences = torch.gather(beam_sequences,1, sorted_indices.unsqueeze(-1).expandas(beam_sequences))
+
+            return sorted_sequences, sorted_scores
+
+            
     def generate_sample(
             self,
             x: torch.Tensor,

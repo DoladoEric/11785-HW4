@@ -117,6 +117,8 @@ class Softmax:
     Read the writeup (Hint: Softmax Section) for further details on Softmax forward and backward expressions.
     Hint: You read more about `axis` and `keep_dims` attributes, helpful for future homeworks too.
     """
+    def __init__(self,dim = -1):
+        self.dim = dim
 
     def forward(self, Z):
         """
@@ -126,38 +128,47 @@ class Softmax:
         """
         # e_Z = np.exp(Z - np.max(Z, axis = 1, keepdims = True))
         # self.A = e_Z / np.sum(e_Z, axis = 1, keepdims = True)
-        self.N = Z.shape[0] * Z.shape(1)
-        self.C = Z.shape[2]
+        # self.N = Z.shape[0] * Z.shape(1)
+        # self.C = Z.shape[2]
+        Z_max = np.max(Z, axis = self.dim, keepdims=True)
+        Z_stable = Z - Z_max
+
+        exp_z = np.exp(Z_stable)
+
+        sum_exp_z = np.sum(exp_z, axis=self.dim, keepdims=True)
+
+        self.A = exp_z / sum_exp_z
 
         return self.A # TODO - What should be the return value?
 
     def backward(self, dLdA):
         # Calculate the batch size and number of features
-        N = None  # TODO
-        C = None  # TODO
+                # Step 1: Move the specified dimension to the last position
+        Z_shape = self.A.shape  # Original shape of the input Z
+        moved_dLdA = np.moveaxis(dLdA, self.dim, -1)  # Move the specified dimension to the last position
+        moved_A = np.moveaxis(self.A, self.dim, -1)  # Move the specified dimension to the last position
 
-        # Initialize the final output dLdZ with all zeros. Refer to the writeup and think about the shape.
-        N, C = dLdA.shape
-        dLdZ = np.zeros_like(dLdA)  # TODO
+        # Step 2: Flatten the tensor to 2D (batch_size, num_classes)
+        flattened_dLdA = moved_dLdA.reshape(-1, moved_A.shape[-1])  # Shape: (N · H · W, C)
+        flattened_A = moved_A.reshape(-1, moved_A.shape[-1])  # Shape: (N · H · W, C)
+
+        # Step 3: Initialize dLdZ with zeros
+        dLdZ_flattened = np.zeros_like(flattened_dLdA)  # Shape: (N · H · W, C)
+
+        # Step 4: Compute the Jacobian and gradient for each row
+        for i in range(flattened_A.shape[0]):  # Iterate over each row
+            a = flattened_A[i, :]  # Shape: (C,)
+            jacobian = np.diag(a) - np.outer(a, a)  # Compute the Jacobian matrix (C, C)
+            dLdZ_flattened[i, :] = np.dot(flattened_dLdA[i, :], jacobian)  # Gradient for this row
+
+        # Step 5: Reshape dLdZ back to the original moved shape
+        dLdZ_moved = dLdZ_flattened.reshape(moved_dLdA.shape)  # Shape: (N, H, W, C)
+
+        # Step 6: Move the last dimension back to its original position
+        dLdZ = np.moveaxis(dLdZ_moved, -1, self.dim)  # Restore the original shape of Z
+
+        return dLdZ
 
         # Fill dLdZ one data point (row) at a time.
-        for i in range(N):
-            # Initialize the Jacobian with all zeros.
-            # Hint: Jacobian matrix for softmax is a _×_ matrix, but what is _ here?
-            a = self.A[i, :]
-            J = np.zeros((C,C))  # TODO
 
-            # Fill the Jacobian matrix, please read the writeup for the conditions.
-            for m in range(C):
-                for n in range(C):
-                    if m == n:
-                        J[m,n] = a[m] * (1 - a[m])
-                    else:
-                        J[m,n] = -a[m] * a[n]
-
-            # Calculate the derivative of the loss with respect to the i-th input, please read the writeup for it.
-            # Hint: How can we use (1×C) and (C×C) to get (1×C) and stack up vertically to give (N×C) derivative matrix?
-            dLdZ[i, :] = np.dot(dLdA[i,:],J)    # TODO
-
-        return dLdZ  # TODO - What should be the return value?
 #print("Running Sucessfully!")

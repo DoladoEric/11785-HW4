@@ -125,7 +125,7 @@ class DecoderOnlyTransformer(nn.Module):
         # TODO: Create target embedding and other layers
         self.target_embedding       = nn.Embedding(num_classes, d_model) # Target embedding
         self.positional_encoding    = nn.Embedding(max_len,d_model)# Positional encoding
-        self.final_linear           = nn.Linear # Final linear layer
+        self.final_linear           = nn.Linear(d_model,num_classes) # Final linear layer
         self.dropout                = nn.Dropout(dropout) # Dropout
         self.norm                   = nn.LayerNorm(d_model) # Layer norm
 
@@ -154,31 +154,48 @@ class DecoderOnlyTransformer(nn.Module):
         pad_mask_dec = PadMask(padded_targets, target_lengths)
         if target_lengths is not None:
             pad_mask_dec = pad_mask_dec.to(padded_targets.device)
-        
+        print(f"[DEBUG] padded_targets shape: {padded_targets.shape}")
+        print(f"[DEBUG] target_lengths shape: {target_lengths.shape}, values: {target_lengths}")
         # TODO: Create causal mask to prevent attending to future tokens on the same device as the input (use CausalMask)
+        seq_len = padded_targets.size(1)
         causal_mask = CausalMask(padded_targets)
-
+        #causal_mask = CausalMask(seq_len=seq_len)
+        print(f"[DEBUG] pad_mask_dec shape: {pad_mask_dec.shape}, values: {pad_mask_dec}")
+        print(f"[DEBUG] causal_mask shape: {causal_mask.shape}, values: {causal_mask}")
         # TODO: Apply the embedding
         x = self.target_embedding(padded_targets)
+        print(f"[DEBUG] target_embedding output shape: {x.shape}")
         # TODO: Apply positional encoding
-        positions = torch.arange(padded_targets.size(1), device=padded_targets.device).unsqueeze(0)
-
+        #positions = torch.arange(seq_len, padded_targets.size(1), device=padded_targets.device).unsqueeze(0)
+        positions = torch.arange(seq_len, device=padded_targets.device).unsqueeze(0)
         x =x + self.positional_encoding(positions)
+        print(f"[DEBUG] positional_encoding output shape: {x.shape}")
         # TODO: Apply dropout 
         x = self.dropout(x)
-
+        print(f"[DEBUG] after dropout shape: {x.shape}")
         # TODO: Pass through all decoder layers, save attention masks
-        runnint_att = {}
+        running_att = {}
         for i in range(self.num_layers):
             # Optionally apply LayerDrop during training (More regularization!)
             if self.training and self.layer_drop_rate > 0 and random.random() < self.layer_drop_rate:
                 continue
-            
+            print(f"[DEBUG] Layer {i + 1} pad_mask_dec shape: {pad_mask_dec.shape}")
+            print(f"[DEBUG] Layer {i + 1} causal shape: {causal_mask.shape}")
             # TODO: Pass through decoder layer
-            x, attention = self.dec_layers[i](x, x, pad_mask_dec, causal_mask)
-            
-            # TODO: Save attention weights  
-            runnint_att['layer{}_dec_self'.format(i + 1)] = attention
+            #x, attention = self.dec_layers[i](x, x, key_padding_mask = pad_mask_dec, attn_mask = causal_mask)
+            x, self_attn_weights, cross_attn_weights = self.dec_layers[i](
+                x,  # 解码器输入
+                x,  # 解码器的 "编码器输出"（在 Decoder-Only Transformer 中，编码器输出等于解码器输入）
+                dec_key_padding_mask=pad_mask_dec,  # 解码器的填充掩码
+                enc_key_padding_mask=None,  # 编码器的填充掩码（在 Decoder-Only Transformer 中为 None）
+                attn_mask=causal_mask  # 因果掩码
+            )
+            print(f"[DEBUG] Layer {i + 1} output shape: {x.shape}")
+            print(f"[DEBUG] Layer {i + 1} self attention shape: {self_attn_weights.shape}")
+            print(f"[DEBUG] Layer {i + 1} cross attention shape: {cross_attn_weights.shape if cross_attn_weights is not None else 'None'}")
+
+            # Save attention weights
+            running_att[f'layer{i + 1}_dec_self'] = self_attn_weights
 
         # TODO: Apply normalization
         x = self.norm(x)
@@ -186,7 +203,9 @@ class DecoderOnlyTransformer(nn.Module):
         seq_out = self.final_linear(x)
         
         # TODO: Return the output sequence and running attention weights
-        return seq_out, runnint_att
+        print(f"[DEBUG] after normalization shape: {x.shape}")
+        print(f"[DEBUG] final output shape: {seq_out.shape}")   
+        return seq_out, running_att
     
     def score(self, batch_prompts: torch.Tensor) -> torch.Tensor:
         '''

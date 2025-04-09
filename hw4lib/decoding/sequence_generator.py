@@ -174,8 +174,9 @@ class SequenceGenerator:
         finished = torch.zeros(batch_size, dtype=torch.bool, device=device)
 
         for _ in range(self.max_length - seq_len):
-            logits = self.model(sequences)
-            logits = logits[:, -1, :]  # Get the last token logits
+            #logits = self.model(sequences)
+            logits = self.score_fn(sequences)  # (batch_size, vocab_size)
+            #logits = logits[:, -1, :]  # Get the last token logits
 
             # Apply temperature and repeat penalty
             if temperature != 1.0 or repeat_penalty != 1.0:
@@ -239,8 +240,9 @@ class SequenceGenerator:
         for _ in range(self.max_length - seq_len):
             flat_sequences = beam_sequences.view(batch_size * beam_width, -1)
               # (batch_size * beam_width, seq_len)
-            logits = self.model(flat_sequences)
-            logits = logits[:, -1, :]  # Get the last token logits
+            #logits = self.model(flat_sequences)
+            logits = self.score_fn(flat_sequences)  # (batch_size * beam_width, vocab_size)
+            #logits = logits[:, -1, :]  # Get the last token logits
 
             if temperature != 1.0 or repeat_penalty != 1.0:
                 logits = self._apply_repeat_penalty(logits, flat_sequences, repeat_penalty)

@@ -9,6 +9,7 @@ from .encoder_layers import SelfAttentionEncoderLayer
 from .speech_embedding import SpeechEmbedding
 import warnings
 from torchinfo import summary
+
 '''
 TODO: Implement these Modules.
 
@@ -119,7 +120,8 @@ class DecoderOnlyTransformer(nn.Module):
         
         # TODO: Create a ModuleList of decoder layers based on the number of layers
         self.dec_layers     =  nn.ModuleList([
-            CrossAttentionDecoderLayer(d_model, num_heads, d_ff, dropout) for _ in range(num_layers)
+            #CrossAttentionDecoderLayer(d_model, num_heads, d_ff, dropout) for _ in range(num_layers)
+            SelfAttentionDecoderLayer(d_model, num_heads, d_ff, dropout) for _ in range(num_layers)
         ])# ModuleList of decoder layers
 
         # TODO: Create target embedding and other layers
@@ -147,53 +149,58 @@ class DecoderOnlyTransformer(nn.Module):
         # DO NOT MODIFY 
         if self.training and target_lengths is None:
             raise ValueError("target_lengths must be provided during training")
-        
-        # TODO: Implement forward
-
+        # if target_lengths is None:
+        #     #target_lengths = torch.sum(padded_targets != self.tokenizer.pad_id, dim=1)
+        #     pad_value = padded_targets[:, -1].mode().values.item()
+        #     target_lengths = torch.sum(padded_targets != pad_value, dim=1)
+        #     print(f"[DEBUG] Detected pad_value: {pad_value}")
+        #     print(f"[DEBUG] Calculated target_lengths: {target_lengths}")
+        #     print(f"[DEBUG] Calculated target_lengths: {target_lengths}")
+        # # TODO: Implement forward
+        # print(f"[DEBUG] target_lengths: {target_lengths}")
         # TODO: Create padding mask for padded_targets on the same device as the input (use PadMask)
-        pad_mask_dec = PadMask(padded_targets, target_lengths)
+        pad_mask_dec = None
         if target_lengths is not None:
-            pad_mask_dec = pad_mask_dec.to(padded_targets.device)
-        print(f"[DEBUG] padded_targets shape: {padded_targets.shape}")
-        print(f"[DEBUG] target_lengths shape: {target_lengths.shape}, values: {target_lengths}")
+            pad_mask_dec = PadMask(padded_targets, target_lengths)
+        #PadMask(padded_targets, target_lengths)
+        # if target_lengths is not None:
+        #     pad_mask_dec = pad_mask_dec.to(padded_targets.device)
+
         # TODO: Create causal mask to prevent attending to future tokens on the same device as the input (use CausalMask)
         seq_len = padded_targets.size(1)
         causal_mask = CausalMask(padded_targets)
         #causal_mask = CausalMask(seq_len=seq_len)
-        print(f"[DEBUG] pad_mask_dec shape: {pad_mask_dec.shape}, values: {pad_mask_dec}")
-        print(f"[DEBUG] causal_mask shape: {causal_mask.shape}, values: {causal_mask}")
+        # print(f"[DEBUG] pad_mask_dec shape: {pad_mask_dec.shape}, values: {pad_mask_dec}")
+        # print(f"[DEBUG] causal_mask shape: {causal_mask.shape}, values: {causal_mask}")
         # TODO: Apply the embedding
         x = self.target_embedding(padded_targets)
-        print(f"[DEBUG] target_embedding output shape: {x.shape}")
+        # print(f"[DEBUG] target_embedding output shape: {x.shape}")
         # TODO: Apply positional encoding
         #positions = torch.arange(seq_len, padded_targets.size(1), device=padded_targets.device).unsqueeze(0)
         positions = torch.arange(seq_len, device=padded_targets.device).unsqueeze(0)
         x =x + self.positional_encoding(positions)
-        print(f"[DEBUG] positional_encoding output shape: {x.shape}")
+        # print(f"[DEBUG] positional_encoding output shape: {x.shape}")
         # TODO: Apply dropout 
         x = self.dropout(x)
-        print(f"[DEBUG] after dropout shape: {x.shape}")
+        # print(f"[DEBUG] after dropout shape: {x.shape}")
         # TODO: Pass through all decoder layers, save attention masks
         running_att = {}
         for i in range(self.num_layers):
             # Optionally apply LayerDrop during training (More regularization!)
             if self.training and self.layer_drop_rate > 0 and random.random() < self.layer_drop_rate:
                 continue
-            print(f"[DEBUG] Layer {i + 1} pad_mask_dec shape: {pad_mask_dec.shape}")
-            print(f"[DEBUG] Layer {i + 1} causal shape: {causal_mask.shape}")
+            # print(f"[DEBUG] Layer {i + 1} pad_mask_dec shape: {pad_mask_dec.shape}")
+            # print(f"[DEBUG] Layer {i + 1} causal shape: {causal_mask.shape}")
             # TODO: Pass through decoder layer
             #x, attention = self.dec_layers[i](x, x, key_padding_mask = pad_mask_dec, attn_mask = causal_mask)
-            x, self_attn_weights, cross_attn_weights = self.dec_layers[i](
-                x,  # 解码器输入
+            x, self_attn_weights = self.dec_layers[i](
+                #x,  # 解码器输入
                 x,  # 解码器的 "编码器输出"（在 Decoder-Only Transformer 中，编码器输出等于解码器输入）
-                dec_key_padding_mask=pad_mask_dec,  # 解码器的填充掩码
-                enc_key_padding_mask=None,  # 编码器的填充掩码（在 Decoder-Only Transformer 中为 None）
+                key_padding_mask=pad_mask_dec,  # 解码器的填充掩码
+                #enc_key_padding_mask=None,  # 编码器的填充掩码（在 Decoder-Only Transformer 中为 None）
                 attn_mask=causal_mask  # 因果掩码
             )
-            print(f"[DEBUG] Layer {i + 1} output shape: {x.shape}")
-            print(f"[DEBUG] Layer {i + 1} self attention shape: {self_attn_weights.shape}")
-            print(f"[DEBUG] Layer {i + 1} cross attention shape: {cross_attn_weights.shape if cross_attn_weights is not None else 'None'}")
-
+           
             # Save attention weights
             running_att[f'layer{i + 1}_dec_self'] = self_attn_weights
 
@@ -203,8 +210,8 @@ class DecoderOnlyTransformer(nn.Module):
         seq_out = self.final_linear(x)
         
         # TODO: Return the output sequence and running attention weights
-        print(f"[DEBUG] after normalization shape: {x.shape}")
-        print(f"[DEBUG] final output shape: {seq_out.shape}")   
+        # print(f"[DEBUG] after normalization shape: {x.shape}")
+        # print(f"[DEBUG] final output shape: {seq_out.shape}")   
         return seq_out, running_att
     
     def score(self, batch_prompts: torch.Tensor) -> torch.Tensor:
@@ -221,7 +228,9 @@ class DecoderOnlyTransformer(nn.Module):
         if self.training:
             raise ValueError("score method is not supported during training, use forward method instead")
         # Forward pass with no target lengths
+        # print(f"[DEBUG] batch_prompts shape: {batch_prompts.shape}")
         seq_out, _ = self.forward(batch_prompts, target_lengths=None)
+        # print(f"[DEBUG] seq_out shape: {seq_out.shape}")
         # Return the last token's logits for next token prediction    
         logits     = seq_out[:, -1, :]
         return logits

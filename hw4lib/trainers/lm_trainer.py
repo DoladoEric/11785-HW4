@@ -54,7 +54,7 @@ class LMTrainer(BaseTrainer):
         # How would you set the ignore_index? 
         # Use value in config to set the label_smoothing argument
         self.criterion = torch.nn.CrossEntropyLoss(
-            ignore_index=config.get("ignore_index", tokenizer.pad_token_id),
+            ignore_index=config.get("ignore_index", tokenizer.pad_id),
             label_smoothing=config.get("label_smoothing", 0.0)
         )
         self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -91,7 +91,7 @@ class LMTrainer(BaseTrainer):
             with torch.autocast(device_type=self.device, dtype=torch.float16):
 
                 # TODO: Get raw logits and attention weights from model
-                raw_preds, attn_weights = self.model(targets_shifted, lengths=lengths)
+                raw_preds, attn_weights = self.model(targets_shifted, target_lengths=lengths)
 
                 # TODO: Calculate raw loss first
                 # What is the shape of raw_preds and targets_golden? 
@@ -189,7 +189,7 @@ class LMTrainer(BaseTrainer):
             # Forward pass
             with torch.inference_mode():
                 # TODO: Get raw predictions and attention weights from model
-                raw_preds, attn_weights = self.model(targets_shifted, lengths=lengths)
+                raw_preds, attn_weights = self.model(targets_shifted, target_lengths=lengths)
 
                 # TODO: Calculate loss
                 # What is the shape of raw_preds and targets_golden? 
@@ -202,7 +202,7 @@ class LMTrainer(BaseTrainer):
             # Calculate metrics
             batch_tokens = lengths.sum().item()
             total_tokens += batch_tokens
-            running_ce_loss += loss.item() * batch_tokens
+            running_ce_loss += raw_loss.item() * batch_tokens
 
             # Update the progress bar
             avg_ce_loss = running_ce_loss / total_tokens
@@ -214,7 +214,7 @@ class LMTrainer(BaseTrainer):
             batch_bar.update()
 
             # Clean up
-            del targets_shifted, targets_golden, lengths, raw_preds, loss
+            del targets_shifted, targets_golden, lengths, raw_preds, raw_loss
             torch.cuda.empty_cache()
 
         # Compute final metrics
@@ -374,7 +374,8 @@ class LMTrainer(BaseTrainer):
 
         # Create sequence generator
         generator = SequenceGenerator(
-            score_fn=lambda x: self.model.score(x),
+            #score_fn=lambda x: self.model.score(x),
+            score_fn=self.model.score,
             tokenizer=self.tokenizer,
             max_length=self.model.max_len,
             device=self.device
@@ -386,9 +387,13 @@ class LMTrainer(BaseTrainer):
             prompt_length=generation_config.get('prompt_length', 10),
             seed=generation_config.get('seed', 11785)
         )
-        #prompts = prompts.to(self.device)
-        prompts = [p.to(self.device) for p in prompts]
-        
+        if not isinstance(prompts, torch.Tensor):
+            # 如果 prompts 不是 torch.Tensor，将其转换为张量并移动到设备
+            prompts = torch.tensor(prompts, device=self.device)
+        else:
+            # 如果 prompts 已经是 torch.Tensor，直接移动到设备
+            prompts = prompts.to(self.device)
+
         # Generate sequences based on method
         self.model.eval()
         with torch.inference_mode():
@@ -411,7 +416,9 @@ class LMTrainer(BaseTrainer):
             else:
                 # TODO: Use the prompts and the generate_greedy method you implemented in the SequenceGenerator class to generate sequences
                 print("Generating with greedy search...")
+                print(f"Prompts: {prompts}")
                 seqs, scores = generator.generate_greedy(prompts)
+                print(f"Generated sequences: {seqs}")
                 #raise NotImplementedError # Remove if you implemented the greedy search method
 
         # Post-process sequences (trim upto EOS token)

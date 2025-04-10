@@ -155,7 +155,8 @@ class MultiHeadAttention:
         :return: (N, H, L, S)
         """
         # TODO: Implement merge masks
-
+        device = key_padding_mask.device
+        attn_mask = attn_mask.to(device)
         # Expand key_padding_mask to (N, 1, 1, S) and broadcast to (N, H, L, S)
         key_mask = key_padding_mask.unsqueeze(1).unsqueeze(2)
         key_mask = key_mask.expand(self.N, self.num_heads, self.L, self.S)

@@ -175,6 +175,7 @@ class SequenceGenerator:
 
         for _ in range(self.max_length - seq_len):
             #logits = self.model(sequences)
+
             logits = self.score_fn(sequences)  # (batch_size, vocab_size)
             #logits = logits[:, -1, :]  # Get the last token logits
 

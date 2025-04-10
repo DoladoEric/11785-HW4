@@ -19,7 +19,12 @@ class Linear:
         """
         self.W = weight
         self.b = bias
-
+    def __call__(self, A):
+        """
+        :param A: Input to the linear layer with shape (N, C0)
+        :return: Output of linear layer with shape (N, C1)
+        """
+        return self.forward(A)
     def forward(self, A):
         """
         :param A: Input to the linear layer with shape (N, C0)

@@ -67,31 +67,35 @@ class MultiHeadAttention:
 
         # Split the query, key, and value into multiple heads
         # (N, L, embed_dim) -> (N, num_heads, L, embed_dim // num_heads)
-        q = q.view(self.N, self.t, self.num_heads, self.E // self.num_heads).transpose(1,2)
+        q = q.reshape(self.N, self.L, self.num_heads, self.E // self.num_heads).transpose(0,2,1,3)
         # (N, S, embed_dim) -> (N, num_heads, S, embed_dim // num_heads)
-        k = k.view(self.N, self.S, self.num_heads,self.E // self.num_heads).transpose(1,2)
+        k = k.reshape(self.N, self.S, self.num_heads,self.E // self.num_heads).transpose(0,2,1,3)
         # (N, S, embed_dim) -> (N, num_heads, S, embed_dim // num_heads)
-        v = v.view(self.N, self.S, self.num_heads,self.E // self.num_heads).transpose(1,2)
+        v = v.reshape(self.N, self.S, self.num_heads,self.E // self.num_heads).transpose(0,2,1,3)
 
         # Merge the masks
         # (N, S) + (L, S) -> (N, H, L, S)
-        key_padding_mask =key_padding_mask.unsqueeze(1).unsqueeze(2)
-        attn_mask = attn_mask.unsqueeze(0).unsqueeze(1)
+        # key_padding_mask =key_padding_mask.unsqueeze(1).unsqueeze(2)
+        # attn_mask = attn_mask.unsqueeze(0).unsqueeze(1)
+        # mask = key_padding_mask | attn_mask
+        key_padding_mask = np.expand_dims(np.expand_dims(key_padding_mask, axis=1), axis=2)
+        attn_mask = np.expand_dims(np.expand_dims(attn_mask, axis=0), axis=1)
         mask = key_padding_mask | attn_mask
-
         # Apply the attention mechanism
         # (N, num_heads, L, embed_dim // num_heads)
-        attn_outputs = np.matmul(q,k.transpose(-2,-1))
-        d_k = q.size(-1)
-        attn_scores = attn_scores / np.sqrt(np.tensor(d_k, dtype=np.float))  # scaled
-        attn_scores = attn_scores.masked_fill(mask == 1, float('-inf'))  # applied mask
-        attn_weights = Softmax(attn_scores, dim=-1)  # (N, H, L, S)
-        #attn_output = np.matmul(attn_weights, v)
-        attn_output = np.matmul(attn_weights, v)  # (N, H, L, embed_dim // num_heads)
-
+        # attn_outputs = np.matmul(q,k.swapaxes(-2,-1))
+        # d_k = q.shape[-1]
+        # attn_scores = attn_outputs / np.sqrt(d_k)  # scaled
+        # # Apply the mask using np.where
+        # attn_scores = np.where(mask == 1, float('-inf'), attn_scores)
+        # softmax = Softmax(dim=-1)
+        # attn_weights = softmax.forward(attn_scores)  # (N, H, L, S)
+        # #attn_output = np.matmul(attn_weights, v)
+        # attn_output = np.matmul(attn_weights, v)  # (N, H, L, embed_dim // num_heads)
+        attn_output = self.attention.forward(q, k, v, mask)  # (N, num_heads, L, embed_dim // num_heads)
         # Merge the attention outputs   
         # (N, num_heads, L, embed_dim // num_heads) -> (N, L, embed_dim)
-        attn_output = attn_output.transpose(1, 2).contiguous().view(self.N, self.L, self.E) 
+        attn_output = attn_output.swapaxes(1, 2).reshape(self.N, self.L, self.E) 
 
         # Project the attention outputs
         # (N, L, embed_dim) -> (N, L, embed_dim)
@@ -116,8 +120,10 @@ class MultiHeadAttention:
 
         # Split the gradients into multiple heads
         # (N, L, embed_dim) -> (N, num_heads, L, embed_dim // num_heads)
-        d_attn_outputs =  d_attn_output.view(self.N, self.L, self.num_heads, self.E // self.num_heads).transpose(1, 2)
-
+        #d_attn_outputs =  d_attn_output.view(self.N, self.L, self.num_heads, self.E // self.num_heads).transpose(1, 2)
+        
+        # (N, L, embed_dim) -> (N, num_heads, L, embed_dim // num_heads)    
+        d_attn_outputs = d_attn_output.reshape(self.N, self.L, self.num_heads, self.E // self.num_heads).swapaxes(1, 2)
         # Backpropagate through the attention mechanism
         # (N, num_heads, L, embed_dim // num_heads) -> (N, num_heads, L, embed_dim // num_heads)
         d_q, d_k, d_v = self.attention.backward(d_attn_outputs)
@@ -191,10 +197,10 @@ class MultiHeadAttention:
         """
         # TODO: Implement concat heads
         # Transpose: (N, num_heads, L, embed_dim // num_heads) -> (N, L, num_heads, embed_dim // num_heads)
-        x = x.transpose(1, 2)
+        x = x.swapaxes(1, 2)
         
         # Reshape: (N, L, num_heads, embed_dim // num_heads) -> (N, L, embed_dim)
-        x = x.contiguous().view(self.N, self.L, self.E)
+        x = x.reshape(self.N, self.L, self.E)
         
         # Return x
         return x

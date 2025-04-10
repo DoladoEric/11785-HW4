@@ -57,7 +57,8 @@ class LMTrainer(BaseTrainer):
             ignore_index=config.get("ignore_index", tokenizer.pad_token_id),
             label_smoothing=config.get("label_smoothing", 0.0)
         )
-        
+        self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.model.to(self.device)
 
     def _train_epoch(self, dataloader) -> Tuple[Dict[str, float], Dict[str, torch.Tensor]]:
         """
@@ -385,27 +386,33 @@ class LMTrainer(BaseTrainer):
             prompt_length=generation_config.get('prompt_length', 10),
             seed=generation_config.get('seed', 11785)
         )
-        prompts = prompts.to(self.device)
-
+        #prompts = prompts.to(self.device)
+        prompts = [p.to(self.device) for p in prompts]
+        
         # Generate sequences based on method
         self.model.eval()
         with torch.inference_mode():
             if generation_config.get('top_k', 0) > 0 or generation_config.get('top_p', 0) > 0:
                 print("Generating with sampling...")
-                seqs, scores = NotImplementedError, NotImplementedError
-                raise NotImplementedError # Remove if you implemented the sampling method
+                seqs, scores = generator.generate_sample(
+                    prompts,
+                    temperature=generation_config.get('temperature', 1.0),
+                    top_k=generation_config.get('top_k', 0),
+                    top_p=generation_config.get('top_p', 0.0)
+                )
+                #raise NotImplementedError # Remove if you implemented the sampling method
             elif generation_config.get('beam_width', 1) > 1:
                 print("Generating with beam search...")
-                seqs, scores = NotImplementedError, NotImplementedError
-                raise NotImplementedError # Remove if you implemented the beam search method
+                seqs, scores = generator.generate_beam(prompts, beam_width=generation_config['beam_width'])
+                #raise NotImplementedError # Remove if you implemented the beam search method
                 # Take best beam and score
                 seqs = seqs[:, 0]
                 scores = scores[:, 0]
             else:
                 # TODO: Use the prompts and the generate_greedy method you implemented in the SequenceGenerator class to generate sequences
                 print("Generating with greedy search...")
-                seqs, scores = NotImplementedError, NotImplementedError
-                raise NotImplementedError # Remove if you implemented the greedy search method
+                seqs, scores = generator.generate_greedy(prompts)
+                #raise NotImplementedError # Remove if you implemented the greedy search method
 
         # Post-process sequences (trim upto EOS token)
         processed_seqs = generator.post_process_sequence(seqs, self.tokenizer)
